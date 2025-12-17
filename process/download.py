@@ -31,7 +31,7 @@ douyin_headers = {
     'User-Agent': process.ua,
     'referer': 'https://www.douyin.com/',
     'accept-encoding': None,
-    'Cookie': f"msToken={utils.generate_random_str(107)}; ttwid={utils.getttwid()}; odin_tt=324fb4ea4a89c0c05827e18a1ed9cf9bf8a17f7705fcc793fec935b637867e2a5a9b8168c885554d029919117a18ba69; passport_csrf_token=f61602fc63757ae0e4fd9d6bdcee4810;"
+    # Cookie will be populated dynamically
 }
 
 class Download(object):
@@ -49,11 +49,19 @@ class Download(object):
             BarColumn(),
             TaskProgressColumn(),
             TimeRemainingColumn(),
-            transient=True  # 添加这个参数，进度条完成后自动消失
+            transient=True
         )
         self.retry_times = 3
         self.chunk_size = 8192
         self.timeout = 30
+        
+        # Initialize headers with dynamic cookie
+        self.headers = douyin_headers.copy()
+        try:
+            self.headers['Cookie'] = f"msToken={utils.generate_random_str(107)}; ttwid={utils.getttwid()}; odin_tt=324fb4ea4a89c0c05827e18a1ed9cf9bf8a17f7705fcc793fec935b637867e2a5a9b8168c885554d029919117a18ba69; passport_csrf_token=f61602fc63757ae0e4fd9d6bdcee4810;"
+        except Exception as e:
+            logger.warning(f"Failed to generate dynamic cookies: {e}")
+            self.headers['Cookie'] = f"msToken={utils.generate_random_str(107)};"
 
     def _download_media(self, url: str, path: Path, desc: str) -> bool:
         """通用下载方法，处理所有类型的媒体下载"""
@@ -200,9 +208,13 @@ class Download(object):
         file_size = filepath.stat().st_size if filepath.exists() else 0
         headers = {'Range': f'bytes={file_size}-'} if file_size > 0 else {}
         
+        # Merge request-specific headers with session headers
+        request_headers = self.headers.copy()
+        request_headers.update(headers)
+        
         for attempt in range(self.retry_times):
             try:
-                response = requests.get(url, headers={**douyin_headers, **headers}, 
+                response = requests.get(url, headers=request_headers, 
                                      stream=True, timeout=self.timeout)
                 
                 if response.status_code not in (200, 206):

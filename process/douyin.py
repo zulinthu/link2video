@@ -6,9 +6,6 @@ import asyncio
 from process.douyin_downloader_playwright_v6 import get_aweme_detail
 from process.download import Download
 from .result import Result
-result1 = Result()
-
-
 
 # 配置logger
 logging.basicConfig(
@@ -18,19 +15,20 @@ logging.basicConfig(
 # 改名为douyin_logger以避免冲突
 douyin_logger = logging.getLogger("DouYin")
 
-dl = Download(
-    thread=1,
-    music=True,
-    cover=True,
-    avatar=True,
-    resjson=True,
-    folderstyle=True
-)
 
-def handle_aweme_download(share_url):
-
-
+def handle_aweme_download(share_url, base_path="downloads"):
     """处理单个作品下载"""
+    # 实例化 Result 和 Download 对象，避免全局变量导致的线程安全问题
+    result_handler = Result()
+    downloader = Download(
+        thread=1,
+        music=True,
+        cover=True,
+        avatar=True,
+        resjson=True,
+        folderstyle=False  # 禁用文件夹模式，直接下载到指定目录
+    )
+
     douyin_logger.info("[  提示  ]:正在请求单个作品")
 
     # 最大重试次数
@@ -44,9 +42,10 @@ def handle_aweme_download(share_url):
             aweme_data = asyncio.run(get_aweme_detail(share_url))
             raw = json.dumps(aweme_data, indent=2, ensure_ascii=False)
             datadict = json.loads(raw)
-            result1.dataConvert(0, result1.awemeDict, datadict)
 
-            result = result1.awemeDict
+            # 使用局部实例处理数据
+            result_handler.dataConvert(0, result_handler.awemeDict, datadict)
+            result = result_handler.awemeDict
 
             if not result:
                 douyin_logger.error("[  错误  ]:获取作品信息失败")
@@ -60,8 +59,8 @@ def handle_aweme_download(share_url):
             datanew = result
 
             if datanew:
-                # awemePath = os.path.join(configModel["path"], "aweme")
-                awemePath = os.path.join("downloads", "douyin")
+                # 使用传入的 base_path
+                awemePath = base_path
                 os.makedirs(awemePath, exist_ok=True)
 
                 # 下载前检查视频URL
@@ -75,13 +74,13 @@ def handle_aweme_download(share_url):
                     continue
 
                 douyin_logger.info(f"[  提示  ]:获取到视频URL，准备下载")
-                dl.userDownload(awemeList=[datanew], savePath=awemePath)
+                # 使用局部实例下载
+                downloader.userDownload(awemeList=[datanew], savePath=awemePath)
                 douyin_logger.info(f"[  成功  ]:视频下载完成")
-                return True
+                return awemePath
             else:
                 douyin_logger.error("[  错误  ]:作品数据为空")
-
-            retry_count += 1
+                retry_count += 1
             if retry_count < max_retries:
                 douyin_logger.info("[  提示  ]:等待 5 秒后重试...")
                 time.sleep(5)
