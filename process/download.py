@@ -14,7 +14,7 @@ from pathlib import Path
 # import aiohttp  # 暂时注释掉
 import logging
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich.panel import Panel
 from rich.text import Text
 from rich import print as rprint
@@ -23,7 +23,7 @@ from .utils import Utils
 utils = Utils()
 
 logger = logging.getLogger("douyin_downloader")
-console = Console()
+console = Console(legacy_windows=True, safe_box=True)
 
 import process
 
@@ -42,9 +42,8 @@ class Download(object):
         self.avatar = avatar
         self.resjson = resjson
         self.folderstyle = folderstyle
-        self.console = Console()
+        self.console = Console(legacy_windows=True, safe_box=True)
         self.progress = Progress(
-            SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
@@ -66,7 +65,7 @@ class Download(object):
     def _download_media(self, url: str, path: Path, desc: str) -> bool:
         """通用下载方法，处理所有类型的媒体下载"""
         if path.exists():
-            self.console.print(f"[cyan]⏭️  跳过已存在: {desc}[/]")
+            self.console.print(f"[cyan][SKIP] 跳过已存在: {desc}[/]")
             return True
             
         # 使用新的断点续传下载方法替换原有的下载逻辑
@@ -94,21 +93,21 @@ class Download(object):
                 music_name = utils.replaceStr(aweme["music"]["title"])
                 music_path = path / f"{name}_music_{music_name}.mp3"
                 if not self._download_media(url, music_path, f"[音乐]{desc}"):
-                    self.console.print(f"[yellow]⚠️  音乐下载失败: {desc}[/]")
+                    self.console.print(f"[yellow][WARN] 音乐下载失败: {desc}[/]")
 
             # 下载封面
             if self.cover and aweme["awemeType"] == 0:
                 if url := aweme.get("video", {}).get("cover", {}).get("url_list", [None])[0]:
                     cover_path = path / f"{name}_cover.jpeg"
                     if not self._download_media(url, cover_path, f"[封面]{desc}"):
-                        self.console.print(f"[yellow]⚠️  封面下载失败: {desc}[/]")
+                        self.console.print(f"[yellow][WARN] 封面下载失败: {desc}[/]")
 
             # 下载头像
             if self.avatar:
                 if url := aweme.get("author", {}).get("avatar", {}).get("url_list", [None])[0]:
                     avatar_path = path / f"{name}_avatar.jpeg"
                     if not self._download_media(url, avatar_path, f"[头像]{desc}"):
-                        self.console.print(f"[yellow]⚠️  头像下载失败: {desc}[/]")
+                        self.console.print(f"[yellow][WARN] 头像下载失败: {desc}[/]")
                     
         except Exception as e:
             raise Exception(f"下载失败: {str(e)}")
@@ -150,7 +149,7 @@ class Download(object):
 
     def userDownload(self, awemeList: List[dict], savePath: Path):
         if not awemeList:
-            self.console.print("[yellow]⚠️  没有找到可下载的内容[/]")
+            self.console.print("[yellow][WARN] 没有找到可下载的内容[/]")
             return
 
         save_path = Path(savePath)
@@ -174,7 +173,7 @@ class Download(object):
 
         with self.progress:
             download_task = self.progress.add_task(
-                "[cyan]📥 批量下载进度", 
+                "[cyan]批量下载进度",
                 total=total_count
             )
             
@@ -184,7 +183,7 @@ class Download(object):
                     success_count += 1
                     self.progress.update(download_task, advance=1)
                 except Exception as e:
-                    self.console.print(f"[red]❌ 下载失败: {str(e)}[/]")
+                    self.console.print(f"[red]下载失败: {str(e)}[/]")
 
         # 显示下载完成统计
         end_time = time.time()
@@ -224,7 +223,7 @@ class Download(object):
                 mode = 'ab' if file_size > 0 else 'wb'
                 
                 with self.progress:
-                    task = self.progress.add_task(f"[cyan]⬇️  {desc}", total=total_size)
+                    task = self.progress.add_task(f"[cyan]下载 {desc}", total=total_size)
                     self.progress.update(task, completed=file_size)  # 更新断点续传的进度
                     
                     with open(filepath, mode) as f:
@@ -238,7 +237,7 @@ class Download(object):
             except Exception as e:
                 logger.warning(f"下载失败 (尝试 {attempt + 1}/{self.retry_times}): {str(e)}")
                 if attempt == self.retry_times - 1:
-                    self.console.print(f"[red]❌ 下载失败: {desc}\n   {str(e)}[/]")
+                    self.console.print(f"[red]下载失败: {desc}\n   {str(e)}[/]")
                     return False
                 time.sleep(1)  # 重试前等待
 
