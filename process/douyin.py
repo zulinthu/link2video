@@ -1,24 +1,20 @@
-import logging
-import time
-import os
-import json
 import asyncio
-from process.douyin_downloader_playwright_v6 import get_aweme_detail
+import json
+import logging
+import os
+import time
+
 from process.download import Download
+from process.douyin_downloader_playwright_v6 import get_aweme_detail
 from .result import Result
 
-# 配置logger
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(levelname)s] %(message)s'
-)
-# 改名为douyin_logger以避免冲突
+
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 douyin_logger = logging.getLogger("DouYin")
 
 
 def handle_aweme_download(share_url, base_path="downloads"):
-    """处理单个作品下载"""
-    # 实例化 Result 和 Download 对象，避免全局变量导致的线程安全问题
+    """抖音专用下载入口，成功返回保存目录字符串，失败抛异常。"""
     result_handler = Result()
     downloader = Download(
         thread=1,
@@ -26,70 +22,52 @@ def handle_aweme_download(share_url, base_path="downloads"):
         cover=True,
         avatar=True,
         resjson=True,
-        folderstyle=False  # 禁用文件夹模式，直接下载到指定目录
+        folderstyle=False,
     )
 
-    douyin_logger.info("[  提示  ]:正在请求单个作品")
+    douyin_logger.info("[提示] 正在请求单个作品")
 
-    # 最大重试次数
     max_retries = 3
     retry_count = 0
+    last_error = ""
 
     while retry_count < max_retries:
         try:
-            douyin_logger.info(f"[  提示  ]:第 {retry_count + 1} 次尝试获取作品信息")
-            # 获取url数据
+            douyin_logger.info(f"[提示] 第 {retry_count + 1} 次尝试获取作品信息")
+
             aweme_data = asyncio.run(get_aweme_detail(share_url))
-            raw = json.dumps(aweme_data, indent=2, ensure_ascii=False)
+            if not aweme_data:
+                last_error = "aweme_detail 为空"
+                raise RuntimeError(last_error)
+
+            raw = json.dumps(aweme_data, ensure_ascii=False)
             datadict = json.loads(raw)
-
-            # 使用局部实例处理数据
             result_handler.dataConvert(0, result_handler.awemeDict, datadict)
-            result = result_handler.awemeDict
+            datanew = result_handler.awemeDict
 
-            if not result:
-                douyin_logger.error("[  错误  ]:获取作品信息失败")
-                retry_count += 1
-                if retry_count < max_retries:
-                    douyin_logger.info("[  提示  ]:等待 5 秒后重试...")
-                    time.sleep(5)
-                continue
+            if not datanew:
+                last_error = "数据转换后为空"
+                raise RuntimeError(last_error)
 
-            # 直接使用返回的字典，不需要解包
-            datanew = result
+            video_url_list = datanew.get("video", {}).get("play_addr", {}).get("url_list", [])
+            if not video_url_list:
+                last_error = "未获取到 video_url"
+                raise RuntimeError(last_error)
 
-            if datanew:
-                # 使用传入的 base_path
-                awemePath = base_path
-                os.makedirs(awemePath, exist_ok=True)
+            aweme_path = str(base_path)
+            os.makedirs(aweme_path, exist_ok=True)
 
-                # 下载前检查视频URL
-                video_url = datanew.get("video", {}).get("play_addr", {}).get("url_list", [])
-                if not video_url or len(video_url) == 0:
-                    douyin_logger.error("[  错误  ]:无法获取视频URL")
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        douyin_logger.info("[  提示  ]:等待 5 秒后重试...")
-                        time.sleep(5)
-                    continue
-
-                douyin_logger.info(f"[  提示  ]:获取到视频URL，准备下载")
-                # 使用局部实例下载
-                downloader.userDownload(awemeList=[datanew], savePath=awemePath)
-                douyin_logger.info(f"[  成功  ]:视频下载完成")
-                return awemePath
-            else:
-                douyin_logger.error("[  错误  ]:作品数据为空")
-                retry_count += 1
-            if retry_count < max_retries:
-                douyin_logger.info("[  提示  ]:等待 5 秒后重试...")
-                time.sleep(5)
+            downloader.userDownload(awemeList=[datanew], savePath=aweme_path)
+            douyin_logger.info("[成功] 抖音视频下载完成")
+            return aweme_path
 
         except Exception as e:
-            douyin_logger.error(f"[  错误  ]:处理作品时出错: {str(e)}")
+            last_error = str(e)
             retry_count += 1
+            douyin_logger.error(f"[错误] 抖音解析失败: {last_error}")
             if retry_count < max_retries:
-                douyin_logger.info("[  提示  ]:等待 5 秒后重试...")
+                douyin_logger.info("[提示] 等待 5 秒后重试...")
                 time.sleep(5)
 
-    douyin_logger.error("[  失败  ]:已达到最大重试次数，无法下载视频")
+    douyin_logger.error("[失败] 已达到最大重试次数，无法下载抖音视频")
+    raise RuntimeError(f"抖音专用解析失败: {last_error or '未知错误'}")
